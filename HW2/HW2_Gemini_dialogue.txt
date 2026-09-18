@@ -1,0 +1,316 @@
+Gemini Flash 3.6
+
+If I have the following code in Python, how could I then create a new matrix which is the sum of all cigarette butts found at each location by location? # Group the data by a particular column
+
+# In this case, the data is grouped by area, and I am only interested in the 'Cigarette Butts' column
+
+
+
+data.groupby('Area')['Cigarette Butts'].unique()
+
+To sum the total number of cigarette butts for each location, replace .unique() with .sum(). Calling .unique() returns an array of unique values rather than adding them up.
+
+Python
+# Group by Area and calculate the total sum of Cigarette Butts for each location
+butt_counts = data.groupby('Area')['Cigarette Butts'].sum().reset_index()
+Key Variations
+Series Output: Omit .reset_index() if you prefer a pandas Series indexed by Area.
+
+DataFrame Output: Keeping .reset_index() converts the result back into a standard two-column pandas DataFrame (matrix style).
+
+Handle Missing Data: If your dataset contains NaN values in the 'Cigarette Butts' column, .sum() automatically treats them as 0. To count missing values as NaN if all values in an area are missing, use data.groupby('Area')['Cigarette Butts'].sum(min_count=1).
+How can I assess a dataset in Python to see if any of the data columns contain missing variables? I've imported pandas, seaborn, matplotlib.pyplot, and cartopy
+
+To check for missing values in a dataset using Pandas, Seaborn, and Matplotlib, you can combine direct data summary methods with visualization.
+
+Assuming your DataFrame is named df:
+
+1. Programmatic Assessment (Pandas)
+Quick Summary (info): Prints non-null counts and data types for each column.
+
+Python
+df.info()
+Total Missing Count per Column:
+
+Python
+df.isnull().sum()
+Percentage of Missing Data per Column:
+
+Python
+(df.isnull().sum() / len(df)) * 100
+2. Visual Assessment (Seaborn & Matplotlib)
+A heatmap lets you quickly spot patterns or clusters in missing data across columns and rows.
+
+Python
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+plt.figure(figsize=(10, 6))
+sns.heatmap(df.isnull(), cbar=False, yticklabels=False, cmap="viridis")
+plt.title("Missing Value Map")
+plt.show()
+Note: Cartopy is specialized for geographic mapping and spatial data visualization, so it is not required for general missing data assessment.
+
+How do I display the colorbar on the heatmap?
+
+To display the colorbar on the heatmap, set cbar=True in sns.heatmap() (or remove cbar=False, as True is the default setting).
+
+Heatmap with Colorbar
+Python
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+plt.figure(figsize=(10, 6))
+
+# Set cbar=True to render the legend/colorbar
+sns.heatmap(df.isnull(), cbar=True, yticklabels=False, cmap="viridis")
+
+plt.title("Missing Value Map")
+plt.show()
+Customizing the Colorbar
+If you want to customize its appearance, pass a dictionary of parameters to cbar_kws:
+
+Change Orientation (Horizontal):
+
+Python
+sns.heatmap(
+    df.isnull(),
+    cbar=True,
+    cbar_kws={"orientation": "horizontal"},
+    cmap="viridis",
+)
+Add a Label to the Colorbar:
+
+Python
+sns.heatmap(
+    df.isnull(),
+    cbar=True,
+    cbar_kws={"label": "Missing (1) vs Present (0)"},
+    cmap="viridis",
+)
+Verification: When you run plt.show(), a colored bar indicating the values corresponding to the heatmap shades will appear adjacent to the plot.
+
+Why is the following code not calculating the sums correctly? data.groupby('Area')['Cigarette Butts'].unique() CB_counts = data.groupby('Area')['Cigarette Butts'].sum().reset_index()
+
+print(CB_counts)
+
+The calculation fails to produce correct sums because unique() is an evaluation step, not a modification. Calling data.groupby('Area')['Cigarette Butts'].unique() simply displays unique values in your output terminal or notebook cell; it does not change the dataframe or filter out duplicate rows in data.
+
+When the second line runs:
+
+Python
+CB_counts = data.groupby('Area')['Cigarette Butts'].sum().reset_index()
+It computes the sum across all rows in the original data dataframe—including duplicate counts or uncleaned values.
+
+Key Reasons and Solutions
+1. You meant to sum only unique values per area
+If your dataset contains repeated entries and you want to sum each unique value once per area:
+
+Python
+# Drop duplicate 'Cigarette Butts' entries per Area first
+CB_counts = (
+    data.drop_duplicates(subset=['Area', 'Cigarette Butts'])
+    .groupby('Area')['Cigarette Butts']
+    .sum()
+    .reset_index()
+)
+2. The column data type is string or object instead of numeric
+If the 'Cigarette Butts' column contains string representations of numbers (or strings with spaces/commas), .sum() will concatenate strings (e.g., "10" + "20" = "1020") or fail to sum mathematically.
+
+Python
+# Convert column to numeric before grouping
+data['Cigarette Butts'] = pd.to_numeric(data['Cigarette Butts'], errors='coerce')
+
+CB_counts = data.groupby('Area')['Cigarette Butts'].sum().reset_index()
+3. You wanted to count unique occurrences (frequency) rather than add values
+If you meant to count how many distinct count entries exist per area instead of adding their numerical values together, use nunique() or count():
+
+Python
+# Count distinct unique values per area
+CB_counts = data.groupby('Area')['Cigarette Butts'].nunique().reset_index()
+How do I make a barplot with the following variables? data.groupby('Area')['Straws, Stirrers'].unique() and SS_counts = data.groupby('Area')['Straws, Stirrers'].sum().reset_index()
+
+To plot the aggregated totals of 'Straws, Stirrers' by 'Area', pass the aggregated DataFrame (SS_counts) to sns.barplot().
+
+Python
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Ensure numeric data type before summing
+data["Straws, Stirrers"] = pd.to_numeric(
+    data["Straws, Stirrers"], errors="coerce"
+)
+SS_counts = data.groupby("Area")["Straws, Stirrers"].sum().reset_index()
+
+# Create the plot
+plt.figure(figsize=(10, 6))
+sns.barplot(data=SS_counts, x="Area", y="Straws, Stirrers", palette="viridis")
+
+plt.title("Total Straws & Stirrers by Area", fontsize=14)
+plt.xlabel("Area", fontsize=12)
+plt.ylabel("Total Count", fontsize=12)
+plt.xticks(
+    rotation=45, ha="right"
+)  # Rotates area labels to prevent overlapping
+
+plt.tight_layout()
+plt.show()
+Direct Method (Without Pre-grouping)
+Seaborn can calculate the sum directly from the raw data DataFrame using estimator='sum', removing the need to create SS_counts manually:
+
+Python
+plt.figure(figsize=(10, 6))
+sns.barplot(
+    data=data,
+    x="Area",
+    y="Straws, Stirrers",
+    estimator="sum",
+    errorbar=None,  # Removes the default confidence interval bars
+    palette="viridis",
+)
+
+plt.title("Total Straws & Stirrers by Area", fontsize=14)
+plt.xticks(rotation=45, ha="right")
+plt.tight_layout()
+plt.show()
+Useful Enhancements
+Horizontal Barplot: Swap x and y (x="Straws, Stirrers", y="Area") if area names are long and overlap on the horizontal axis.
+
+Sort Bars: Sort SS_counts before plotting to display bars in descending order:
+
+Python
+SS_counts = SS_counts.sort_values(
+    by="Straws, Stirrers", ascending=False
+)
+
+<ElicitationsGroup message="Where would you like to go next?">
+  <Elicitation label="Add numerical values on top of each bar" query="How can I add numeric text labels on top of each bar in a Seaborn barplot?"/>
+  <Elicitation label="Sort and filter top 10 areas" query="How do I filter and plot only the top 10 areas with the highest totals in Pandas and Seaborn?"/>
+</ElicitationsGroup>
+Explain how to use the Cartopy package in Jupyter Notebook
+
+Cartopy is a Python package used for geospatial data processing and producing maps. In Jupyter Notebook, Cartopy works alongside matplotlib.pyplot to handle map projections and plot spatial features (like coastlines, borders, or geographical coordinates).
+
+Step 1: Standard Setup and Imports
+To create maps, import matplotlib.pyplot, cartopy.crs (Coordinate Reference Systems), and cartopy.feature (pre-defined geospatial boundaries/landmasses).
+
+Python
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+import matplotlib.pyplot as plt
+Step 2: Creating a Basic Map
+When creating an axis in Matplotlib, pass the projection argument using cartopy.crs.
+
+Python
+# Initialize figure
+fig = plt.figure(figsize=(10, 6))
+
+# Set projection (e.g., PlateCarree, Robinson, Mercator)
+ax = plt.axes(projection=ccrs.PlateCarree())
+
+# Add default geographical features
+ax.add_feature(cfeature.COASTLINE)
+ax.add_feature(cfeature.BORDERS, linestyle=":")
+ax.add_feature(cfeature.LAND, facecolor="lightgray")
+ax.add_feature(cfeature.OCEAN, facecolor="lightblue")
+
+# Set map extent: [min_lon, max_lon, min_lat, max_lat]
+ax.set_extent([-130, -60, 20, 55], crs=ccrs.PlateCarree())
+
+plt.title("Map of North America")
+plt.show()
+Step 3: Plotting Spatial Data onto Maps
+When overlaying points, lines, or data from a Pandas DataFrame, you must specify the transform argument so Cartopy knows how to translate your coordinates (typically standard longitude/latitude, which corresponds to ccrs.PlateCarree()) onto your map's projection.
+
+Example: Plotting Latitude & Longitude Points
+Python
+import pandas as pd
+
+# Sample dataset of coastal cleanup locations
+df = pd.DataFrame(
+    {
+        "Site": ["Site A", "Site B", "Site C"],
+        "Lat": [29.76, 25.76, 33.74],
+        "Lon": [-95.36, -80.19, -84.38],
+        "Straws_Found": [120, 450, 310],
+    }
+)
+
+fig = plt.figure(figsize=(10, 6))
+ax = plt.axes(projection=ccrs.PlateCarree())
+
+# Add background map features
+ax.add_feature(cfeature.COASTLINE)
+ax.add_feature(cfeature.STATES, edgecolor="gray")
+
+# Plot points (Scatter plot)
+# 'transform=ccrs.PlateCarree()' tells Cartopy that Lat/Lon are standard geographic coords
+scatter = ax.scatter(
+    df["Lon"],
+    df["Lat"],
+    s=df["Straws_Found"],  # Bubble size based on counts
+    color="red",
+    alpha=0.6,
+    transform=ccrs.PlateCarree(),
+)
+
+# Label locations
+for idx, row in df.iterrows():
+    ax.text(
+        row["Lon"] + 0.5,
+        row["Lat"],
+        row["Site"],
+        transform=ccrs.PlateCarree(),
+    )
+
+ax.set_extent([-100, -75, 20, 38], crs=ccrs.PlateCarree())
+plt.title("Cleanup Sites and Debris Counts")
+plt.show()
+Key Concepts to Remember
+Concept	Explanation
+projection	Used when declaring the subplot axis (projection=ccrs.Mercator()). Defines how the map looks.
+transform	Used in plotting calls (ax.scatter(..., transform=ccrs.PlateCarree())). Defines the coordinate system of your input data (usually standard Lat/Lon).
+cfeature	Provides standard background layers (COASTLINE, BORDERS, RIVERS, LAKES, LAND, OCEAN, STATES).
+Explain what the utility of the seaborn package for Python is
+
+Seaborn is a high-level statistical data visualization library built on top of Matplotlib. It provides an intuitive interface for drawing attractive, informative, and complex statistical graphics with minimal code.
+
+Core Utilities of Seaborn
+1. Native Integration with Pandas DataFrames
+Unlike raw Matplotlib, which requires extracting arrays or looping through series, Seaborn works directly with Pandas DataFrames. You specify column names as strings for variables (x="Age", y="Income", hue="Category"), and Seaborn handles grouping, scaling, and labeling automatically.
+
+2. Automatic Statistical Aggregation & Estimation
+Seaborn performs statistical calculations under the hood while plotting:
+
+Bar plots & Point plots: Automatically calculate metrics (like mean, median, or sum) and plot confidence intervals (errorbar).
+
+Regression plots (sns.regplot, sns.lmplot): Fit and draw linear regression models along with 95% confidence bands automatically.
+
+KDE plots (sns.kdeplot): Compute and plot continuous probability density estimates for distributions.
+
+3. Multi-Plot Grids (Facet Grids)
+Seaborn simplifies split-panel visualizations for multi-dimensional data:
+
+sns.FacetGrid / sns.catplot: Breaks datasets into subplots based on categorical variables (e.g., creating separate panels for different geographic areas).
+
+sns.pairplot: Generates a matrix of pairwise bivariate distributions across all numerical variables in a single function call.
+
+4. Built-in Categorical & Distribution Plots
+Seaborn provides high-level functions specifically designed for visual data exploration:
+
+Distributions: histplot, kdeplot, ecdfplot, rugplot.
+
+Categorical relationships: boxplot, violinplot, boxenplot, stripplot, swarmplot.
+
+Matrix/Correlation: heatmap, clustermap (which automatically computes hierarchical clustering).
+
+5. Publication-Ready Styling
+Seaborn ships with modern default aesthetic themes, color palettes, and scaling presets (notebook, paper, talk, poster) that significantly improve upon default Matplotlib styling without needing manual formatting.
+
+Seaborn vs. Matplotlib Comparison
+Task / Feature	Matplotlib	Seaborn
+Abstraction Level	Low-level (control every axis, pixel, and tick)	High-level (plot complex patterns in 1–2 lines)
+Data Structure	Arrays, lists, Pandas Series	Direct Pandas DataFrames (data=df)
+Coloring / Grouping	Requires manual loops for grouped categories	Built-in hue, style, and col arguments
+Statistical Calculations	Must be calculated beforehand	Computed automatically (means, regression, CI)
+Note: Because Seaborn is built on Matplotlib, you can mix both libraries in the same figure to combine Seaborn's high-level plotting with Matplotlib's fine-grained axis controls.
