@@ -1,0 +1,1007 @@
+Gemini Flash Version 3.6
+
+How could I "unstack" the attached dataset so that the different variables in "parameter" are each their own column? The way this is currently set up makes it difficult to associate parameter measurements with the sample of origin
+
+To unstack (pivot) this Chesapeake Bay Program water quality dataset so that each water quality parameter becomes its own column, you need to group the dataset by the columns that uniquely identify each sample, expand the Parameter column into headers, and populate the cells with MeasureValue.
+
+Key Data Columns Identified
+Sample Index (Identifying Columns): Station, SampleDate, SampleTime, SampleDepthM, Layer, SampleType, SampleReplicate (and FieldActivityId).
+
+Pivot Variable: Parameter
+
+Pivot Values: MeasureValue
+
+Note on Duplicate Entries: In this dataset, certain parameters (such as DIN) have multiple method codes (e.g., D01A vs D01B) for the same sample event. If you want a strictly 1-row-per-sample table, you should decide whether to aggregate (e.g., mean/first value) or include Method in your sample index.
+
+Option 1: Python (Pandas)
+Method A: Keeping 1 row per sample event (handling duplicates via aggregation)
+Python
+import pandas as pd
+
+# Load dataset
+df = pd.read_csv("CBP_TWQM_MAIN_WQ_2021_2026_surface.csv")
+
+# Define columns that identify a unique sample event
+sample_id_cols = [
+    "Station",
+    "SampleDate",
+    "SampleTime",
+    "SampleDepthM",
+    "Layer",
+    "SampleType",
+    "SampleReplicate",
+]
+
+# Pivot so parameters become separate columns
+unstacked_df = df.pivot_table(
+    index=sample_id_cols,
+    columns="Parameter",
+    values="MeasureValue",
+    aggfunc="first",  # or 'mean' if numerical values differ across methods
+).reset_index()
+
+# Save output
+unstacked_df.to_csv("WQ_unstacked_surface.csv", index=False)
+Method B: Including Method to preserve exact measurements
+Python
+# Include 'Method' in the index to avoid combining different lab method outputs
+sample_id_cols_with_method = sample_id_cols + ["Method"]
+
+unstacked_df = df.pivot(
+    index=sample_id_cols_with_method,
+    columns="Parameter",
+    values="MeasureValue",
+).reset_index()
+Option 2: R (tidyverse / tidyr)
+R
+library(tidyverse)
+
+df <- read_csv("CBP_TWQM_MAIN_WQ_2021_2026_surface.csv")
+
+unstacked_df <- df %>%
+  pivot_wider(
+    id_cols = c(Station, SampleDate, SampleTime, SampleDepthM, Layer, SampleType, SampleReplicate),
+    names_from = Parameter,
+    values_from = MeasureValue,
+    values_fn = list(MeasureValue = ~ first(.x)) # handles method duplicates
+  )
+
+write_csv(unstacked_df, "WQ_unstacked_surface.csv")
+Option 3: Excel (Power Query)
+Open Excel and go to Data > Get Data > From File > From Text/CSV and import CBP_TWQM_MAIN_WQ_2021_2026_surface.csv.
+
+Click Transform Data to open the Power Query Editor.
+
+Select the Parameter column.
+
+Go to the Transform tab at the top ribbon and click Pivot Column.
+
+In the dialog window:
+
+Value Column: Select MeasureValue.
+
+Open Advanced Options and set Aggregate Value Function to Don't Aggregate (or Average / First if prompt alerts to duplicate rows per sample).
+
+Click OK, then click Close & Load on the Home tab to load the unstacked sheet.
+
+How do I turn these into single column features? x = unstacked_data['WTEMP']
+
+y = unstacked_data['DIN']
+
+To convert 1D pandas Series into 2D single-column features (shape (n_samples, 1)), which is required by libraries like scikit-learn for feature matrices, use one of the following methods depending on your target data structure:
+
+Method 1: Double Brackets in Pandas (Recommended)
+Selecting a single column with double brackets [[]] keeps it as a 2D DataFrame instead of converting it to a 1D Series.
+
+Python
+# Returns a 2D DataFrame (shape: N x 1)
+X = unstacked_data[["WTEMP"]]
+y = unstacked_data[["DIN"]]
+Method 2: Convert Existing Series using .to_frame()
+If x and y are already created as 1D pandas Series:
+
+Python
+# Convert 1D Series to 1-column DataFrames
+X = x.to_frame()
+Y = y.to_frame()
+Method 3: Reshape to 2D NumPy Array
+If you need 2D NumPy arrays (e.g., for Scikit-Learn or PyTorch model inputs):
+
+Python
+# Reshape from 1D (N,) to 2D (N, 1)
+X = x.to_numpy().reshape(-1, 1)
+Y = y.to_numpy().reshape(-1, 1)
+Scikit-Learn Context Note
+If you are setting up data for standard scikit-learn regression or classification models (model.fit(X, y)):
+
+Feature matrix (X) MUST be 2D: X = unstacked_data[['WTEMP']]
+
+Target vector (y) is usually kept 1D: y = unstacked_data['DIN']
+
+Explain this error and how to fix it: TypeError Traceback (most recent call last)Cell In[14], line 26 22 y_pred = regr.predict(x_test) 23 24 # Evaluate model performance: 25 # The coefficients of the line y_pred = m * X_test + b---> 26 print('y = %.2f * x + %.2f' % (regr.coef_[0], regr.intercept_)) 27 # The mean squared error (lower numbers, better accuracy) 28 print('Mean squared error: %.2f' 29 % mean_squared_error(y_test, y_pred))TypeError: only 0-dimensional arrays can be converted to Python scalars
+
+Cause of the Error
+This error occurs because regr.coef_ is a 2D array (e.g., array([[0.05]])) when your feature dataset X has two dimensions (n_samples, 1).
+
+Indexing it with regr.coef_[0] returns a 1D array (array([0.05])) rather than a single number (a 0-dimensional scalar). The string formatting operator %f expects a single scalar number, but receiving a 1D array triggers the TypeError.
+
+How to Fix It
+Option 1: Access the exact element with regr.coef_[0][0] (Recommended)
+Indexing twice extracts the scalar directly from the 2D array:
+
+Python
+# Change regr.coef_[0] to regr.coef_[0][0]
+print("y = %.2f * x + %.2f" % (regr.coef_[0][0], regr.intercept_[0]))
+Option 2: Use .item() to extract the Python scalar
+The .item() method extracts a standard Python scalar regardless of array dimensions:
+
+Python
+print("y = %.2f * x + %.2f" % (regr.coef_.item(), regr.intercept_.item()))
+Option 3: Use F-Strings (Modern Python Syntax)
+F-strings handle formatting cleanly and explicitly:
+
+Python
+print(f"y = {regr.coef_[0][0]:.2f} * x + {regr.intercept_[0]:.2f}")
+Now I'm trying to run this cell, but I am getting an error message: # These should already be defined, but define again in case this cell is being run before previous cells
+
+temp = unstacked_data[['WTEMP']]
+
+DIN = unstacked_data[['DIN']]
+
+
+
+# Choose the number of neighbors = 'k'
+
+k  = int(input('Choose a number for k: '))
+
+
+
+# Initiate the KNN regression model, setting its 'k' parameter (number of neighbors) to 'k' that we chose above.
+
+KNN_model = KNeighborsRegressor(n_neighbors=k)
+
+KNN_model.fit(temp, DIN)
+
+
+
+# Compute the R-squared score
+
+print("R-squared score: {0:.2f}".format(model.score(x,y)))
+
+
+
+# Plot the model together with the data
+
+DIN_fit = KNN_model.predict(temp)
+
+plt.scatter(temp, DIN)
+
+plt.plot(temp, DIN_fit)
+
+plt.xlabel('Water Temperature')
+
+plt.ylabel('Dissolved Inorganic Nitrogen')
+
+plt.show()
+
+There are two distinct errors causing this issue: a NameError during scoring and a ValueError during model fitting.
+
+Error 1: NameError: name 'model' is not defined (or x/y defined incorrectly)
+In your score calculation line:
+
+Python
+print("R-squared score: {0:.2f}".format(model.score(x, y)))
+Cause: The variable is named KNN_model, not model. Furthermore, x and y are not defined in this cell (earlier you defined temp and DIN).
+
+Fix: Change model.score(x, y) to KNN_model.score(temp, DIN).
+
+Error 2: ValueError: Input X contains NaN
+If you fix the variable names, scikit-learn will throw a ValueError because your dataset contains missing (NaN) values.
+
+In this water quality dataset, physical measurements like WTEMP (water temperature) were logged under SampleType = 'ISM', while laboratory nutrient measurements like DIN were logged under SampleType = 'D'. Unstacking including SampleType puts them on separate rows, generating missing values for each other.
+
+Complete Corrected Code
+To fix both issues, drop missing values across temp and DIN before fitting the model, and correct the scoring variables:
+
+Python
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.neighbors import KNeighborsRegressor
+
+# 1. Extract and drop rows with missing values in either column
+df_clean = unstacked_data[["WTEMP", "DIN"]].dropna()
+
+# 2. Reshape/select features and target
+temp = df_clean[["WTEMP"]]
+DIN = df_clean[["DIN"]]
+
+# 3. Choose k and fit model
+k = int(input("Choose a number for k: "))
+KNN_model = KNeighborsRegressor(n_neighbors=k)
+KNN_model.fit(temp, DIN)
+
+# 4. Compute R-squared score using correct variable names
+score = KNN_model.score(temp, DIN)
+print("R-squared score: {0:.2f}".format(score))
+
+# 5. Plot data points and continuous prediction trendline
+# (Sorting values ensures the trendline plots smoothly without zigzagging)
+temp_sorted = temp.sort_values(by="WTEMP")
+DIN_fit = KNN_model.predict(temp_sorted)
+
+plt.figure(figsize=(8, 5))
+plt.scatter(temp, DIN, color="blue", alpha=0.7, label="Actual Data")
+plt.plot(temp_sorted, DIN_fit, color="red", linewidth=2, label="KNN Fit")
+plt.xlabel("Water Temperature (°C)")
+plt.ylabel("Dissolved Inorganic Nitrogen (mg/L)")
+plt.legend()
+plt.show()
+The specific error I'm getting is: ValueError: The feature names should match those that were passed during fit.
+
+Feature names unseen at fit time:
+
+PH
+Feature names seen at fit time, yet now missing:
+
+WTEMP
+Cause of the Error
+This error occurs during KNN_model.predict(...) when the DataFrame passed to .predict() has different column names than the DataFrame passed to .fit().
+
+In scikit-learn, passing a pandas DataFrame (e.g., df[['WTEMP']]) causes the model to remember the column name 'WTEMP'. If you later pass a DataFrame with a different column name (like df[['PH']]), scikit-learn throws this error because it expects the input features to match.
+
+This usually happens due to one of two reasons in your code:
+
+Passing the wrong variable to .predict(): Passing unstacked_data[['PH']] (or another variable) instead of temp or temp_sorted.
+
+Re-assigning temp or another feature variable to point to 'PH' earlier in the notebook.
+
+How to Fix It
+1. Check your prediction lines
+Ensure you are passing temp (or a sorted version of temp) into .predict():
+
+Python
+# RIGHT: Passing the same feature column ('WTEMP')
+DIN_fit = KNN_model.predict(temp)
+
+# WRONG: Passing 'PH' or another feature column
+# DIN_fit = KNN_model.predict(unstacked_data[['PH']])
+2. Clean Step-by-Step Code Example
+If you want to fit WTEMP and predict across a range of values for a smooth plot line, structure the cell like this:
+
+Python
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.neighbors import KNeighborsRegressor
+
+# 1. Clean data for WTEMP and DIN
+df_clean = unstacked_data[["WTEMP", "DIN"]].dropna()
+
+# 2. Define feature (temp) and target (DIN)
+temp = df_clean[["WTEMP"]]
+DIN = df_clean[["DIN"]]
+
+# 3. Fit the model
+k = int(input("Choose a number for k: "))
+KNN_model = KNeighborsRegressor(n_neighbors=k)
+KNN_model.fit(temp, DIN)
+
+# 4. Predict on the SAME feature dataframe
+# (Sorting temp first keeps the prediction line smooth when plotting)
+temp_sorted = temp.sort_values(by="WTEMP")
+DIN_fit = KNN_model.predict(temp_sorted)
+
+# 5. Plot results
+plt.figure(figsize=(8, 5))
+plt.scatter(temp, DIN, color="blue", label="Actual Data")
+plt.plot(temp_sorted, DIN_fit, color="red", label="KNN Fit")
+plt.xlabel("Water Temperature (°C)")
+plt.ylabel("Dissolved Inorganic Nitrogen (mg/L)")
+plt.legend()
+plt.show()
+Note: If you intentionally want to predict DIN using PH instead of WTEMP, you must update .fit() as well:
+
+Python
+ph = df_clean[["PH"]]
+KNN_model.fit(ph, DIN)
+DIN_fit = KNN_model.predict(ph)
+This code is in the cell above, but I don't understand why that's influencing the KNN regression: # FOR pH
+
+
+
+pH = unstacked_data[['PH']] # This changed
+
+
+
+pH_train,pH_test,DIN_train,DIN_test = train_test_split(pH,DIN,test_size=0.2,random_state=4) # The 0.2 makes the test data 20% of our target
+
+
+
+regr = linear_model.LinearRegression()
+
+
+
+regr.fit(pH_train, DIN_train)
+
+
+
+DIN_pred = regr.predict(pH_test)
+
+
+
+print(f"y = {regr.coef_[0][0]:.2f} * x + {regr.intercept_[0]:.2f}")
+
+
+
+print('Mean squared error: %.2f'
+
+      % mean_squared_error(DIN_test, DIN_pred))
+
+
+
+print('Coefficient of determination (R-squared): %.2f'
+
+      % r2_score(DIN_test, DIN_pred))
+
+
+
+plt.scatter(pH_test, DIN_test,  color='red')
+
+plt.plot(pH_test, DIN_pred,  '-x', color='blue', linewidth=1)
+
+plt.xlabel('pH')
+
+plt.ylabel('Dissolved Inorganic Nitrogen')
+
+plt.show()
+
+The reason that cell is affecting your KNN regression comes down to variable scope and variable overwriting in Jupyter Notebooks.
+
+When you run that pH cell above, two specific things happen that break the KNN cell:
+
+1. Overwriting Shared Variable Names (x, y, or DIN)
+In Jupyter Notebooks, all cells share the same global workspace.
+
+If your KNN cell uses general variable names like x or y (e.g., model.score(x, y)), or if the variables DIN or temp were updated or modified in the linear regression cell, running the pH cell changes what those variables store in memory.
+
+When the KNN cell runs next, it uses the newly updated variable values (which are now referencing pH instead of WTEMP).
+
+2. Mismatched Feature Names in Pandas DataFrames
+When you passed temp (unstacked_data[['WTEMP']]) into KNN_model.fit(), scikit-learn memorized that the input feature matrix had a column named WTEMP.
+
+If the KNN cell accidentally passes pH or a redefined feature variable to KNN_model.predict(), scikit-learn detects the mismatch and throws:
+
+ValueError: Feature names unseen at fit time: - PH. Feature names seen at fit time, yet now missing: - WTEMP
+
+How to Fix It
+To keep your notebook clean and prevent cells from interfering with each other:
+
+Use explicit, unique variable names for each model:
+
+For Linear Regression: X_ph, y_din, regr_model
+
+For KNN Regression: X_temp, y_din, knn_model
+
+Self-contain each cell: Define and clean the specific features right inside the cell where they are used so running cells out of order won't break your code.
+
+Example Clean KNN Cell:
+Python
+# Self-contained KNN cell using explicit variable names
+df_knn = unstacked_data[["WTEMP", "DIN"]].dropna()
+
+X_temp = df_knn[["WTEMP"]]  # 2D DataFrame for features
+y_din = df_knn["DIN"]  # 1D Series or 2D DataFrame for target
+
+k = int(input("Choose a number for k: "))
+knn_model = KNeighborsRegressor(n_neighbors=k)
+knn_model.fit(X_temp, y_din)
+
+# Score using the exact same variables passed to fit
+print("R-squared score: {0:.2f}".format(knn_model.score(X_temp, y_din)))
+
+# Predict on X_temp (sorted for plotting)
+X_temp_sorted = X_temp.sort_values(by="WTEMP")
+DIN_fit = knn_model.predict(X_temp_sorted)
+
+plt.figure(figsize=(8, 5))
+plt.scatter(X_temp, y_din, color="red", label="Actual Data")
+plt.plot(X_temp_sorted, DIN_fit, color="blue", linewidth=2, label="KNN Fit")
+plt.xlabel("Water Temperature")
+plt.ylabel("Dissolved Inorganic Nitrogen")
+plt.legend()
+plt.show()
+Do I need to specify my training vs. target data for the regression below? Or is that build into the package: # These should already be defined, but define again in case this cell is being run before previous cells
+
+temp = unstacked_data[['WTEMP']]
+
+DIN = unstacked_data[['DIN']]
+
+
+
+# Choose the number of neighbors = 'k'
+
+k  = int(input('Choose a number for k: '))
+
+
+
+# Initiate the KNN regression model, setting its 'k' parameter (number of neighbors) to 'k' that we chose above.
+
+KNN_model = KNeighborsRegressor(n_neighbors=k)
+
+KNN_model.fit(temp, DIN)
+
+
+
+# Compute the R-squared score
+
+print("R-squared score: {0:.2f}".format(KNN_model.score(temp,DIN)))
+
+
+
+# Plot the model together with the data
+
+DIN_fit = KNN_model.predict(temp)
+
+plt.scatter(temp, DIN, label='Test Data")
+
+plt.plot(temp, DIN_fit)
+
+plt.xlabel('Water Temperature')
+
+plt.ylabel('Dissolved Inorganic Nitrogen')
+
+plt.show()
+
+Yes, you must explicitly specify feature (input) data versus target (output) data yourself. That distinction is not built into scikit-learn automatically.
+
+scikit-learn models have no built-in awareness of water quality domain logic—they rely entirely on the order in which you pass arguments to .fit(X, y):
+
+1st Argument (X) = Feature / Input data (must be 2D, e.g., temp)
+
+2nd Argument (y) = Target / Output data (e.g., DIN)
+
+You already did this correctly on this line:
+
+Python
+KNN_model.fit(temp, DIN)  # temp = feature (X), DIN = target (y)
+What Is Missing: Train/Test Split
+While you correctly specified feature vs. target, you are fitting and evaluating the model on the exact same dataset (temp and DIN).
+
+To test how well your KNN regression actually generalizes to new data (and avoid data leakage), you should use train_test_split to divide your features and targets into training and testing sets before fitting:
+
+Python
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsRegressor
+
+# 1. Clean missing values first across both variables
+df_clean = unstacked_data[["WTEMP", "DIN"]].dropna()
+
+# 2. Define features (X) and target (y)
+X = df_clean[["WTEMP"]]
+y = df_clean["DIN"]
+
+# 3. Split into training and testing sets (80% train, 20% test)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+# 4. Initiate and fit ONLY on training data
+k = int(input("Choose a number for k: "))
+KNN_model = KNeighborsRegressor(n_neighbors=k)
+KNN_model.fit(X_train, y_train)
+
+# 5. Evaluate score on unseen TEST data
+r2_score = KNN_model.score(X_test, y_test)
+print(f"R-squared score on Test Data: {r2_score:.2f}")
+
+# 6. Predict on sorted test features for a smooth plot
+X_test_sorted = X_test.sort_values(by="WTEMP")
+y_pred = KNN_model.predict(X_test_sorted)
+
+# 7. Plot
+plt.figure(figsize=(8, 5))
+plt.scatter(X_test, y_test, color="red", label="Test Data")
+plt.plot(X_test_sorted, y_pred, color="blue", linewidth=2, label="KNN Prediction")
+plt.xlabel("Water Temperature (°C)")
+plt.ylabel("Dissolved Inorganic Nitrogen (mg/L)")
+plt.legend()
+plt.show()
+(Note: There was also a minor typo on your plt.scatter line—label='Test Data" mixed a single quote with a double quote, which was fixed above).
+
+Why am I getting an error: # These should already be defined, but define again in case this cell is being run before previous cells
+
+temp = unstacked_data[['WTEMP']]
+
+DIN = unstacked_data[['DIN']]
+
+
+
+# Split the data into training vs. testing datasets
+
+temp_train,temp_test,DIN_train,DIN_test = train_test_split(temp,DIN,test_size=0.2,random_state=4) 
+
+
+
+# Choose the number of neighbors = 'k'
+
+k  = int(input('Choose a number for k: '))
+
+
+
+# Initiate the KNN regression model, setting its 'k' parameter (number of neighbors) to 'k' that we chose above.
+
+KNN_model = KNeighborsRegressor(n_neighbors=k)
+
+KNN_model.fit(temp_train, DIN_train)
+
+
+
+# Predict DIN values with the model fit
+
+DIN_pred = KNN_model.predict(temp_test)
+
+
+
+# Compute the R-squared score between the test DIN data and the predicted DIN data
+
+print("R-squared score: {0:.2f}".format(KNN_model.score(DIN_test,DIN_pred)))
+
+
+
+# Plot the model together with the data
+
+#DIN_fit = KNN_model.predict(temp)
+
+plt.scatter(temp_test, DIN_test, colors='red', label="Test Data")
+
+plt.plot(temp_test, DIN_pred, '-x', color='blue', linewidth=1, label="Predicted Data")
+
+plt.xlabel('Water Temperature')
+
+plt.ylabel('Dissolved Inorganic Nitrogen')
+
+plt.legend()
+
+plt.show()
+
+There are three specific errors triggering in this cell:
+
+Error 1: Feature Name Mismatch in KNN_model.score()
+Python
+# WRONG
+print("R-squared score: {0:.2f}".format(KNN_model.score(DIN_test, DIN_pred)))
+Cause: The method signature for .score() is KNN_model.score(X_test, y_test).
+
+The Problem: You passed DIN_test (which has feature name DIN) as the first argument instead of temp_test (WTEMP). scikit-learn expects features (X_test) first, so it throws:
+
+ValueError: Feature names unseen at fit time: - DIN. Feature names seen at fit time, yet now missing: - WTEMP
+
+Fix: Pass (temp_test, DIN_test) to .score(). Do not pass DIN_pred into .score()—scikit-learn calculates predictions internally.
+
+Error 2: Unexpected Keyword Argument in plt.scatter()
+Python
+# WRONG
+plt.scatter(temp_test, DIN_test, colors="red", label="Test Data")
+Cause: Matplotlib's plt.scatter() takes c or color as a keyword argument, not colors (plural).
+
+The Problem: Throws TypeError: PathCollection.set() got an unexpected keyword argument 'colors'.
+
+Fix: Change colors='red' to color='red' or c='red'.
+
+Error 3: Missing Values (NaN) in Input Features
+Cause: In this water quality dataset, WTEMP and DIN measurements are logged on different rows in the original raw dataset, so unstacking them produces NaN values.
+
+The Problem: Scikit-learn will throw ValueError: Input X contains NaN during train_test_split or .fit().
+
+Fix: Drop rows containing NaN before splitting into train/test sets.
+
+Corrected, Ready-to-Run Code
+Python
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsRegressor
+
+# 1. Clean missing values across both columns first
+df_clean = unstacked_data[["WTEMP", "DIN"]].dropna()
+
+temp = df_clean[["WTEMP"]]  # Feature matrix (2D)
+DIN = df_clean["DIN"]  # Target vector
+
+# 2. Split into training and testing datasets
+temp_train, temp_test, DIN_train, DIN_test = train_test_split(
+    temp, DIN, test_size=0.2, random_state=4
+)
+
+# 3. Choose k and fit model
+k = int(input("Choose a number for k: "))
+KNN_model = KNeighborsRegressor(n_neighbors=k)
+KNN_model.fit(temp_train, DIN_train)
+
+# 4. Predict DIN values
+DIN_pred = KNN_model.predict(temp_test)
+
+# 5. Compute R-squared score correctly: .score(X_test, y_test)
+r2 = KNN_model.score(temp_test, DIN_test)
+print("R-squared score: {0:.2f}".format(r2))
+
+# 6. Sort test values for a smooth trendline plot
+sort_idx = temp_test["WTEMP"].argsort()
+temp_test_sorted = temp_test.iloc[sort_idx]
+DIN_pred_sorted = DIN_pred[sort_idx]
+
+# 7. Plot results
+plt.figure(figsize=(8, 5))
+plt.scatter(
+    temp_test, DIN_test, color="red", label="Test Data"
+)  # Fixed 'colors' -> 'color'
+plt.plot(
+    temp_test_sorted,
+    DIN_pred_sorted,
+    "-x",
+    color="blue",
+    linewidth=1,
+    label="Predicted Data",
+)
+plt.xlabel("Water Temperature")
+plt.ylabel("Dissolved Inorganic Nitrogen")
+plt.legend()
+plt.show()
+Is this model set up correctly? # After doing a little bit of reading about random forest models, I learned that they are useful for 
+
+# identifying which columns in your dataset are best for building the model. So I wanted to explore that here
+
+# because I think this could be very useful in my class project. 
+
+
+
+x = unstacked_data.iloc[:,3,5:29].values # Pull out all of the numerical variables that could inform the model (columns 3 through 29 based on the info above)
+
+y = unstacked_data.iloc[:,4].values # Pulls out just the target variable (column 4 based on the info above)
+
+
+
+# Split the data into training data and testing data, like all of the other examples
+
+x_train,x_test,y_train,y_test = train_test_split(x,y,test_size=0.2,random_state=4)
+
+
+
+# Choose the number of trees in the forest = 'k'
+
+k  = int(input('Choose a number for k: '))
+
+
+
+# Initiate the RF regression model, setting its 'k' parameter (number of trees in the forest) to 'k' that we chose above.
+
+RF_model_II = RandomForestRegressor(n_estimators=k, random_state=42, max_depth=None) # There are other hyperparameters that could be tuned here
+
+RF_model_II.fit(x_train, y_train)
+
+
+
+# Predict DIN values with the model fit
+
+y_pred = RF_model_II.predict(x_test)
+
+
+
+# Compute the R-squared score between the test DIN data and the predicted DIN data
+
+print('Coefficient of determination (R-squared): %.2f'
+
+      % r2_score(y_test, y_pred))
+
+
+
+# Plot the model together with the data
+
+#plt.scatter(x_test, y_test, color='red', label="Test Data")
+
+#plt.scatter(x_test, y_pred, marker='x', color='blue', label="Predicted Data")
+
+#plt.ylabel('Dissolved Inorganic Nitrogen')
+
+#plt.legend()
+
+#plt.title('Random Forest Regression (all variables)')
+
+#plt.show()
+
+
+
+# Also look at the feature importance
+
+feature_importances = RF_model_II.feature_importances_
+
+for idx, importance in enumerate(feature_importances):
+
+    print(f"Feature {idx+1} importance: {importance:.3f}")
+
+No, this model code currently has several critical issues that will prevent it from running properly or giving meaningful results.
+
+Key Issues & Fixes
+1. Invalid DataFrame Slicing (TypeError / IndexingError)
+Python
+# WRONG: Slicing syntax with too many indices
+x = unstacked_data.iloc[:, 3, 5:29].values
+The Problem: .iloc[:, 3, 5:29] has three commas/indexers, which pandas does not allow on a 2D DataFrame.
+
+The Fix: Select features using column names or a range of integer indices (e.g., unstacked_data.iloc[:, 7:]).
+
+2. Incorrect Target Variable Selection
+Python
+# WRONG: Slicing column index 4
+y = unstacked_data.iloc[:, 4].values
+The Problem: Column 4 in your unstacked DataFrame is Layer (text categorical value "S"), not DIN (which is column 8).
+
+The Fix: Select y = unstacked_data['DIN'].
+
+3. Data Leakage (Target-Derived Features in Predictors)
+The Problem: Parameters like NO23F, NO2F, NO3F, NH4F, TDN, and TN are direct components or parent measurements of DIN (
+DIN=NO 
+2
+​
+ +NO 
+3
+​
+ +NH 
+4
+​
+ ). Including them makes the model learn simple arithmetic identity rather than water quality relationships.
+
+The Fix: Exclude other nitrogen parameters from X when predicting DIN.
+
+4. Handling Unhandled Missing Values (NaN)
+The Problem: RandomForestRegressor in standard scikit-learn throws a ValueError if any feature contains NaN values.
+
+The Fix: Drop rows where target DIN is missing, and either drop feature columns with missing values or use an imputer (e.g., SimpleImputer).
+
+5. Plotting High-Dimensional Features
+The Problem: The commented-out plotting code tries to pass a 2D multi-feature array x_test directly into plt.scatter(x_test, y_test). Matplotlib cannot plot a 2D feature matrix on a 1D x-axis.
+
+The Fix: Plot Predicted vs. Actual values (or feature importance bar chart) instead.
+
+Clean, Corrected Code
+Here is the fully corrected implementation that handles feature selection, cleans missing data, fits the Random Forest model, and visualizes feature importances cleanly:
+
+Python
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
+
+# 1. Define candidate predictor features (excluding DIN components/totals to prevent data leakage)
+predictor_cols = [
+    "WTEMP",
+    "PH",
+    "SALINITY",
+    "DO",
+    "SECCHI",
+    "SPCOND",
+    "SIGMA_T",
+    "CHLA",
+    "TSS",
+    "PO4F",
+    "TP",
+]
+
+# 2. Extract features and target, and drop missing values across selected columns
+df_rf = unstacked_data[predictor_cols + ["DIN"]].dropna()
+
+X = df_rf[predictor_cols]
+y = df_rf["DIN"]
+
+# 3. Train / Test Split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=4
+)
+
+# 4. User input for number of trees
+k = int(input("Choose a number for k (n_estimators): "))
+
+# 5. Fit Random Forest Regressor
+RF_model = RandomForestRegressor(n_estimators=k, random_state=42)
+RF_model.fit(X_train, y_train)
+
+# 6. Predictions & Evaluation
+y_pred = RF_model.predict(X_test)
+
+print(
+    f"Coefficient of determination (R-squared): {r2_score(y_test, y_pred):.2f}"
+)
+print(f"Mean Squared Error: {mean_squared_error(y_test, y_pred):.4f}")
+
+# 7. Visualize Feature Importances
+importances = RF_model.feature_importances_
+indices = np.argsort(importances)[::-1]
+
+plt.figure(figsize=(10, 5))
+plt.title("Feature Importances for Predicting DIN")
+plt.bar(range(X.shape[1]), importances[indices], color="steelblue")
+plt.xticks(range(X.shape[1]), [predictor_cols[i] for i in indices], rotation=45)
+plt.ylabel("Relative Importance")
+plt.tight_layout()
+plt.show()
+
+# 8. Visualize Actual vs Predicted
+plt.figure(figsize=(6, 6))
+plt.scatter(y_test, y_pred, color="blue", alpha=0.7)
+plt.plot(
+    [y_test.min(), y_test.max()],
+    [y_test.min(), y_test.max()],
+    "r--",
+    lw=2,
+    label="Ideal Fit",
+)
+plt.xlabel("Actual DIN")
+plt.ylabel("Predicted DIN")
+plt.title("Actual vs Predicted DIN")
+plt.legend()
+plt.show()
+This code now works (I changed the unstacked dataframe a little bit), but I don't understand why I can't create the plot (I am getting an error message that x and y are not the same length): # Have to define the predictor variables, and then extract just the predictor and target variables
+
+
+
+predictor_cols = [
+
+    "WTEMP",
+
+    "PH",
+
+    "SALINITY",
+
+    "DO",
+
+    "SECCHI",
+
+    "SPCOND",
+
+    "SIGMA_T",
+
+    "CHLA",
+
+    "TSS",
+
+    "PO4F",
+
+    "TP",
+
+]
+
+
+
+x = unstacked_data[predictor_cols] # Define/extract predictor variables (intentionally not including any of the variables that already have N)
+
+y = unstacked_data["DIN"] # Define/extract target variable
+
+
+
+# Split the data into training data and testing data, like all of the other examples
+
+x_train,x_test,y_train,y_test = train_test_split(x,y,test_size=0.2,random_state=4)
+
+
+
+# Choose the number of trees in the forest = 'k'
+
+k  = int(input('Choose a number for k: '))
+
+
+
+# Initiate the RF regression model, setting its 'k' parameter (number of trees in the forest) to 'k' that we chose above.
+
+RF_model_II = RandomForestRegressor(n_estimators=k, random_state=42, max_depth=None) # There are other hyperparameters that could be tuned here
+
+RF_model_II.fit(x_train, y_train)
+
+
+
+# Predict DIN values with the model fit
+
+y_pred = RF_model_II.predict(x_test)
+
+
+
+# Compute the R-squared score between the test DIN data and the predicted DIN data
+
+print('Coefficient of determination (R-squared): %.2f'
+
+      % r2_score(y_test, y_pred))
+
+
+
+# Plot the model together with the data
+
+plt.scatter(x_test, y_test, color='red', label="Test Data")
+
+plt.scatter(x_test, y_pred, marker='x', color='blue', label="Predicted Data")
+
+plt.ylabel('Dissolved Inorganic Nitrogen')
+
+plt.legend()
+
+plt.title('Random Forest Regression (all variables)')
+
+plt.show()
+
+
+
+# Also look at the feature importance
+
+feature_importances = RF_model_II.feature_importances_
+
+for idx, importance in enumerate(feature_importances):
+
+    print(f"Feature {idx+1} importance: {importance:.3f}")
+
+The error x and y must be the same size happens because plt.scatter() expects a 1D array for the x-axis and a 1D array for the y-axis.
+
+In your code:
+
+x_test has 11 columns (a 2D matrix with shape (N, 11)).
+
+y_test and y_pred are 1D vectors (shape (N,)).
+
+Matplotlib sees 
+11×N values on the x-axis versus only 
+N values on the y-axis, causing the dimension mismatch error. You cannot plot an 11-dimensional feature matrix directly against a 1-dimensional target on a standard 2D scatter plot.
+
+How to Fix the Plot
+Depending on what you want to visualize, there are two primary ways to fix this:
+
+Option 1: Plot Actual DIN vs. Predicted DIN (Recommended for Multi-Feature Models)
+To evaluate how well your Random Forest performed overall, plot the actual target values (y_test) on the x-axis against the predicted target values (y_pred) on the y-axis. Points falling close to the 45-degree diagonal line indicate accurate predictions:
+
+Python
+plt.figure(figsize=(7, 5))
+
+# Plot actual vs predicted values
+plt.scatter(y_test, y_pred, color="blue", alpha=0.7, label="Predictions")
+
+# Add a 1:1 line for reference (perfect predictions)
+min_val = min(y_test.min(), y_pred.min())
+max_val = max(y_test.max(), y_pred.max())
+plt.plot(
+    [min_val, max_val],
+    [min_val, max_val],
+    "r--",
+    linewidth=2,
+    label="Ideal Fit (y = x)",
+)
+
+plt.xlabel("Actual Dissolved Inorganic Nitrogen")
+plt.ylabel("Predicted Dissolved Inorganic Nitrogen")
+plt.title("Random Forest: Actual vs. Predicted DIN")
+plt.legend()
+plt.show()
+Option 2: Plot DIN against a Single Feature (e.g., Water Temperature)
+If you want to see how DIN varies with respect to a single predictor like WTEMP, pass that specific column for the x-axis:
+
+Python
+plt.figure(figsize=(8, 5))
+
+# Extract WTEMP specifically from x_test
+plt.scatter(x_test["WTEMP"], y_test, color="red", label="Test Data (Actual)")
+plt.scatter(
+    x_test["WTEMP"],
+    y_pred,
+    marker="x",
+    color="blue",
+    label="Predicted Data",
+)
+
+plt.xlabel("Water Temperature")
+plt.ylabel("Dissolved Inorganic Nitrogen")
+plt.title("Random Forest Regression (DIN vs WTEMP)")
+plt.legend()
+plt.show()
+Bonus Tip: Print Feature Names alongside Importances
+To make your feature importance output easy to read, pair predictor_cols with their calculated scores:
+
+Python
+# Match feature importances with column names
+for name, importance in zip(predictor_cols, RF_model_II.feature_importances_):
+    print(f"{name:10s}: {importance:.3f}")
